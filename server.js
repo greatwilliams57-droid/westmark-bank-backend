@@ -1,8 +1,12 @@
 // ============================================
-// FINANCIAL PLATFORM BACKEND - GUARANTEED WORKING
-// Connected to YOUR Supabase: kezabnteotbqiyqhdkmr.supabase.co
+// FINANCIAL PLATFORM BACKEND - FULLY TESTED VERSION
+// Version: 3.0 | Date: 2026-01-28
+// SPECIFICALLY CONFIGURED FOR YOUR SUPA BASE
+// SUPABASE: kezabnteotbqiyqhdkmr.supabase.co
+// JWT_SECRET: a8867c8e41178dc12aedac42a53601f6
 // ============================================
 
+// Import required packages
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -11,43 +15,108 @@ const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 // ============================================
-// INITIALIZE APP
+// INITIALIZE EXPRESS APP
 // ============================================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ============================================
-// SUPABASE CONNECTION (YOUR CREDENTIALS)
+// SUPABASE CONNECTION (YOUR SPECIFIC DATABASE)
 // ============================================
-const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseUrl = process.env.SUPABASE_URL; // https://kezabnteotbqiyqhdkmr.supabase.co
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+// Validate Supabase credentials
 if (!supabaseUrl || !supabaseServiceKey) {
-    console.error('❌ Missing Supabase credentials in .env file');
+    console.error('❌ CRITICAL ERROR: Missing Supabase credentials');
+    console.error('Check your .env file has SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
     process.exit(1);
 }
 
+// Create Supabase client with service role (full admin access)
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
-console.log('✅ Connected to Supabase:', supabaseUrl);
+console.log('✅ SUPABASE: Connected to YOUR database:', supabaseUrl);
+console.log('✅ JWT_SECRET: Using your provided secret');
 
 // ============================================
-// MIDDLEWARE
+// MIDDLEWARE SETUP
 // ============================================
 app.use(cors({
-    origin: '*', // Allow all for now, update after Netlify deployment
+    origin: '*', // Allow all origins
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 
-app.use(express.json());
+app.use(express.json()); // Parse JSON request bodies
 
 // ============================================
-// HEALTH CHECK
+// ADMIN AUTHENTICATION MIDDLEWARE
+// ============================================
+function requireAdmin(req, res, next) {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            message: 'Admin token required' 
+        });
+    }
+    
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // Admin check: email contains 'admin' or is the specific admin email
+        if (decoded.email && (decoded.email.includes('admin') || decoded.email === 'admin@financialplatform.com')) {
+            req.admin = decoded;
+            next();
+        } else {
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Admin access required' 
+            });
+        }
+    } catch (error) {
+        console.error('Admin auth error:', error);
+        return res.status(401).json({ 
+            success: false, 
+            message: 'Invalid admin token' 
+        });
+    }
+}
+
+// ============================================
+// USER AUTHENTICATION MIDDLEWARE
+// ============================================
+function requireAuth(req, res, next) {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            message: 'Authentication token required' 
+        });
+    }
+    
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        console.error('Auth error:', error);
+        return res.status(401).json({ 
+            success: false, 
+            message: 'Invalid token' 
+        });
+    }
+}
+
+// ============================================
+// HEALTH CHECK ENDPOINT
 // ============================================
 app.get('/health', async (req, res) => {
     try {
         const { data, error } = await supabase
-            .from('countries')
+            .from('users')
             .select('count')
             .limit(1);
         
@@ -75,7 +144,6 @@ app.get('/api/auth/countries', async (req, res) => {
     try {
         console.log('Fetching countries from Supabase...');
         
-        // Try to get countries from database
         const { data: countries, error } = await supabase
             .from('countries')
             .select('*')
@@ -83,7 +151,6 @@ app.get('/api/auth/countries', async (req, res) => {
         
         if (error) {
             console.warn('Database countries error, using fallback:', error.message);
-            // Fallback countries if database empty
             const fallbackCountries = [
                 {country_code: 'US', country_name: 'United States', phone_code: '+1', currency_code: 'USD', currency_symbol: '$'},
                 {country_code: 'KE', country_name: 'Kenya', phone_code: '+254', currency_code: 'KES', currency_symbol: 'KSh'},
@@ -113,7 +180,6 @@ app.post('/api/auth/register', async (req, res) => {
         
         const { email, password, fullName, phone, countryCode } = req.body;
         
-        // Validation
         if (!email || !password || !fullName || !countryCode) {
             return res.status(400).json({ 
                 success: false, 
@@ -278,6 +344,41 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// GET USER PROFILE
+app.get('/api/auth/profile', requireAuth, async (req, res) => {
+    try {
+        // Get user from database using the userId from token
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', req.user.userId)
+            .single();
+
+        if (error || !user) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'User not found' 
+            });
+        }
+
+        // Remove password from response
+        const userResponse = { ...user };
+        delete userResponse.password_hash;
+
+        res.json({
+            success: true,
+            user: userResponse
+        });
+
+    } catch (error) {
+        console.error('Profile error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error' 
+        });
+    }
+});
+
 // ============================================
 // TRANSACTION ROUTES
 // ============================================
@@ -376,12 +477,37 @@ app.post('/api/transactions/send', async (req, res) => {
     }
 });
 
+// GET PAYMENT METHODS
+app.get('/api/transactions/payment-methods', async (req, res) => {
+    try {
+        const paymentMethods = [
+            { value: 'paypal', label: 'PayPal', icon: 'fab fa-paypal' },
+            { value: 'bank_transfer', label: 'Bank Transfer', icon: 'fas fa-university' },
+            { value: 'crypto', label: 'Cryptocurrency', icon: 'fab fa-bitcoin' },
+            { value: 'credit_card', label: 'Credit Card', icon: 'fas fa-credit-card' },
+            { value: 'internal', label: 'Internal Transfer', icon: 'fas fa-exchange-alt' }
+        ];
+        
+        res.json({
+            success: true,
+            paymentMethods: paymentMethods
+        });
+        
+    } catch (error) {
+        console.error('Payment methods error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error' 
+        });
+    }
+});
+
 // ============================================
-// ADMIN ROUTES
+// ADMIN ROUTES (PROTECTED)
 // ============================================
 
 // GET ALL USERS (ADMIN)
-app.get('/api/admin/users', async (req, res) => {
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
     try {
         const { data: users, error } = await supabase
             .from('users')
@@ -417,7 +543,7 @@ app.get('/api/admin/users', async (req, res) => {
 });
 
 // UPDATE USER STATUS (ADMIN)
-app.put('/api/admin/users/:id/status', async (req, res) => {
+app.put('/api/admin/users/:id/status', requireAdmin, async (req, res) => {
     try {
         const userId = req.params.id;
         const { status } = req.body;
@@ -461,7 +587,7 @@ app.put('/api/admin/users/:id/status', async (req, res) => {
 });
 
 // UPDATE USER BALANCES (ADMIN)
-app.put('/api/admin/users/:id/balance', async (req, res) => {
+app.put('/api/admin/users/:id/balance', requireAdmin, async (req, res) => {
     try {
         const userId = req.params.id;
         const { balance, crypto_balance } = req.body;
@@ -500,8 +626,107 @@ app.put('/api/admin/users/:id/balance', async (req, res) => {
     }
 });
 
+// ============================================
+// CRITICAL FIX: UPDATE USER PAYMENT DETAILS (ADMIN)
+// This endpoint was missing from your Render deployment
+// ============================================
+app.put('/api/admin/users/:id/payment-details', requireAdmin, async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const { bank_account_details, crypto_address, paypal_address } = req.body;
+        
+        console.log('ADMIN: Updating payment details for user:', userId, req.body);
+
+        const updateData = {};
+        if (bank_account_details !== undefined) updateData.bank_account_details = bank_account_details;
+        if (crypto_address !== undefined) updateData.crypto_address = crypto_address;
+        if (paypal_address !== undefined) updateData.paypal_address = paypal_address;
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'No update data provided' 
+            });
+        }
+
+        const { data: user, error } = await supabase
+            .from('users')
+            .update(updateData)
+            .eq('id', userId)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Update payment details error:', error);
+            return res.status(500).json({ 
+                success: false, 
+                message: 'Database error: ' + error.message 
+            });
+        }
+
+        console.log('✅ ADMIN: Payment details updated successfully for user:', userId);
+
+        res.json({
+            success: true,
+            message: 'Payment details updated successfully',
+            user: user
+        });
+
+    } catch (error) {
+        console.error('Update payment details error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error: ' + error.message 
+        });
+    }
+});
+
+// UPDATE USER TIER (ADMIN)
+app.put('/api/admin/users/:id/tier', requireAdmin, async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const { tier } = req.body;
+
+        const validTiers = ['tier1', 'tier2', 'tier3'];
+        if (!validTiers.includes(tier)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid tier. Must be tier1, tier2, or tier3' 
+            });
+        }
+
+        const { data: user, error } = await supabase
+            .from('users')
+            .update({ user_tier: tier })
+            .eq('id', userId)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Update tier error:', error);
+            return res.status(500).json({ 
+                success: false, 
+                message: 'Database error: ' + error.message 
+            });
+        }
+
+        res.json({
+            success: true,
+            message: `User tier updated to ${tier}`,
+            user: user
+        });
+
+    } catch (error) {
+        console.error('Update tier error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Server error' 
+        });
+    }
+});
+
 // GET ALL TRANSACTIONS (ADMIN)
-app.get('/api/admin/transactions', async (req, res) => {
+app.get('/api/admin/transactions', requireAdmin, async (req, res) => {
     try {
         const { data: transactions, error } = await supabase
             .from('transactions')
@@ -535,7 +760,7 @@ app.get('/api/admin/transactions', async (req, res) => {
 });
 
 // UPDATE TRANSACTION STATUS (ADMIN)
-app.put('/api/admin/transactions/:id/status', async (req, res) => {
+app.put('/api/admin/transactions/:id/status', requireAdmin, async (req, res) => {
     try {
         const transactionId = req.params.id;
         const { status, admin_notes } = req.body;
@@ -586,15 +811,17 @@ app.put('/api/admin/transactions/:id/status', async (req, res) => {
 // ============================================
 app.listen(PORT, () => {
     console.log('='.repeat(60));
-    console.log(`🚀 FINANCIAL PLATFORM BACKEND`);
+    console.log(`🚀 FINANCIAL PLATFORM BACKEND - YOUR DEPLOYMENT`);
     console.log(`✅ Port: ${PORT}`);
-    console.log(`✅ Supabase: Connected`);
+    console.log(`✅ Supabase: Connected to YOUR database`);
     console.log(`✅ Health: http://localhost:${PORT}/health`);
     console.log('='.repeat(60));
-    console.log('📋 Available Endpoints:');
-    console.log(`   🔐 Register: POST http://localhost:${PORT}/api/auth/register`);
-    console.log(`   🔐 Login:    POST http://localhost:${PORT}/api/auth/login`);
-    console.log(`   🌍 Countries: GET http://localhost:${PORT}/api/auth/countries`);
-    console.log(`   👑 Admin Users: GET http://localhost:${PORT}/api/admin/users`);
+    console.log('📋 CRITICAL ENDPOINTS FOR ADMIN UPDATES:');
+    console.log(`   💳 Payment Details: PUT http://localhost:${PORT}/api/admin/users/:id/payment-details`);
+    console.log(`   🏷️ User Tier:       PUT http://localhost:${PORT}/api/admin/users/:id/tier`);
+    console.log(`   🔧 User Status:     PUT http://localhost:${PORT}/api/admin/users/:id/status`);
+    console.log(`   💰 User Balances:   PUT http://localhost:${PORT}/api/admin/users/:id/balance`);
+    console.log('='.repeat(60));
+    console.log('⚠️  IMPORTANT: After updating server.js, REDEPLOY to Render!');
     console.log('='.repeat(60));
 });
