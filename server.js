@@ -38,6 +38,17 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 console.log('✅ SUPABASE: Connected to YOUR database:', supabaseUrl);
 console.log('✅ JWT_SECRET: Using your provided secret');
 
+
+// ============================================
+// FILE UPLOAD CONFIGURATION
+// ============================================
+const storage = multer.memoryStorage();
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+
 // ============================================
 // MIDDLEWARE SETUP
 // ============================================
@@ -378,6 +389,66 @@ app.get('/api/auth/profile', requireAuth, async (req, res) => {
         });
     }
 });
+
+
+// ============================================
+// PROFILE PICTURE UPLOAD
+// ============================================
+app.post('/api/auth/upload-profile-picture', requireAuth, upload.single('profile_picture'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'No image uploaded' 
+            });
+        }
+        
+        const userId = req.user.userId;
+        const fileExt = req.file.originalname.split('.').pop();
+        const fileName = `profile_${userId}_${Date.now()}.${fileExt}`;
+        const filePath = `profile-pictures/${fileName}`;
+        
+        // Upload to Supabase
+        const { data, error } = await supabase.storage
+            .from('profiles')
+            .upload(filePath, req.file.buffer, {
+                contentType: req.file.mimetype,
+                upsert: true
+            });
+        
+        if (error) throw error;
+        
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+            .from('profiles')
+            .getPublicUrl(filePath);
+        
+        // Update user in database
+        await supabase
+            .from('users')
+            .update({ 
+                profile_picture: publicUrl,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+        
+        res.json({
+            success: true,
+            message: 'Profile picture updated',
+            imageUrl: publicUrl
+        });
+        
+    } catch (error) {
+        console.error('Upload error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Upload failed: ' + error.message 
+        });
+    }
+});
+
+
+
 
 // ============================================
 // TRANSACTION ROUTES
@@ -825,3 +896,4 @@ app.listen(PORT, () => {
     console.log('⚠️  IMPORTANT: After updating server.js, REDEPLOY to Render!');
     console.log('='.repeat(60));
 });
+
