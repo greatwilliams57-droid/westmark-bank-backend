@@ -592,40 +592,12 @@ app.put('/api/admin/users/:id/status', requireAdmin, async (req, res) => {
 app.put('/api/admin/users/:id/balance', requireAdmin, async (req, res) => {
     try {
         const userId = req.params.id;
-        let { balance, crypto_balance } = req.body;
-        
-        console.log('BALANCE UPDATE - Raw input:', { balance, crypto_balance });
+        const { balance, crypto_balance } = req.body;
         
         const updateData = {};
-        
-        // FIX: Remove commas before parsing
-        if (balance !== undefined) {
-            // Convert to string if it isn't already
-            let balanceStr = balance.toString();
-            console.log('Balance as string:', balanceStr);
-            
-            // Remove all commas
-            balanceStr = balanceStr.replace(/,/g, '');
-            console.log('Balance after removing commas:', balanceStr);
-            
-            // Parse to float
-            updateData.balance = parseFloat(balanceStr);
-            console.log('Final balance number:', updateData.balance);
-        }
-        
-        if (crypto_balance !== undefined) {
-            // Convert to string if it isn't already
-            let cryptoStr = crypto_balance.toString();
-            console.log('Crypto as string:', cryptoStr);
-            
-            // Remove all commas
-            cryptoStr = cryptoStr.replace(/,/g, '');
-            console.log('Crypto after removing commas:', cryptoStr);
-            
-            // Parse to float
-            updateData.crypto_balance = parseFloat(cryptoStr);
-            console.log('Final crypto number:', updateData.crypto_balance);
-        }
+        // REMOVED parseFloat - now saves exactly what user typed
+        if (balance !== undefined) updateData.balance = balance;
+        if (crypto_balance !== undefined) updateData.crypto_balance = crypto_balance;
         
         const { data: user, error } = await supabase
             .from('users')
@@ -641,8 +613,6 @@ app.put('/api/admin/users/:id/balance', requireAdmin, async (req, res) => {
                 message: 'Database error' 
             });
         }
-        
-        console.log('✅ User balances updated successfully:', updateData);
         
         res.json({
             success: true,
@@ -858,6 +828,7 @@ app.listen(PORT, () => {
     console.log('⚠️  IMPORTANT: After updating server.js, REDEPLOY to Render!');
     console.log('='.repeat(60));
 });
+
 
 
 
