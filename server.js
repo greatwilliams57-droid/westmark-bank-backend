@@ -591,7 +591,15 @@ app.put('/api/admin/users/:id/status', requireAdmin, async (req, res) => {
 app.put('/api/admin/users/:id/balance', requireAdmin, async (req, res) => {
     try {
         const userId = req.params.id;
-        const { balance, crypto_balance } = req.body;
+        let { balance, crypto_balance } = req.body; // CHANGED: const to let
+        
+        // ADD THESE 3 LINES - Remove commas if they exist
+        if (balance !== undefined && balance !== null) {
+            balance = balance.toString().replace(/,/g, '');
+        }
+        if (crypto_balance !== undefined && crypto_balance !== null) {
+            crypto_balance = crypto_balance.toString().replace(/,/g, '');
+        }
         
         const updateData = {};
         if (balance !== undefined) updateData.balance = parseFloat(balance);
@@ -826,5 +834,6 @@ app.listen(PORT, () => {
     console.log('⚠️  IMPORTANT: After updating server.js, REDEPLOY to Render!');
     console.log('='.repeat(60));
 });
+
 
 
